@@ -1,0 +1,447 @@
+---
+title: "STATS101AFinalProject"
+author: "Qianli Wu"
+date: "3/3/2022"
+output: 
+  pdf_document:
+    toc: true
+    toc_depth: 3
+  
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+\pagebreak
+# First Model - Full Model
+### Data Inspection
+```{r}
+# import data
+lol.data <- read.csv("lol_games.csv")
+# remove the column of game id and game duration
+lol.data <- lol.data[,-1]
+lol.data <- lol.data[,-1]
+```
+
+### Multivariate Regression Model of ALL Predictors
+```{r}
+lol.model.first <- lm(goldDiff~., data = lol.data)
+summary(lol.model.first)
+```
+
+\pagebreak
+### Data Cleaning
+
+```{r}
+# Since in summary of lol.model, we have all NA in these four predictors
+# Thus, inspect the four columns
+cat("Range of destroyedTopBaseTurret: ", range(lol.data$destroyedTopBaseTurret),
+    "\nRange of destroyedMidBaseTurret: ", range(lol.data$destroyedMidBaseTurret),
+    "\nRange of lostTopBaseTurret: ", range(lol.data$lostTopBaseTurret),
+    "\nRange of lostMidBaseTurret: ", range(lol.data$lostMidBaseTurret))
+# Since all values in these four columns are 0, we can remove these predictors
+```
+```{r data-cleanning, message=FALSE, warning=FALSE}
+# import tidyverse for Data Cleaning
+library(tidyverse)
+# If the Base Turret is not destroyed, then the Inhibitor cannot be destroyed
+# Thus, the observations with Top/Mid Inhibitor > 0 but Top/Mid BaseTurret are invalid
+# Therefore, we remove these observations and then remove these columns
+
+# Also, BaseTurrent cannot be destroyed twice
+# Thus, the observations with BotBaseTurret > 2 are invalid
+# We Also need to remove these
+lol.data <- lol.data %>% 
+  # remove the observations with more than 1 Bottom Base Turrent being destroyed
+  filter(destroyedBotBaseTurret < 2) %>% 
+  filter(lostBotBaseTurret < 2) %>% 
+  # remove the observations with destroyed Top inhibitor but not Top Base Turret
+  filter(destroyedTopInhibitor == 0) %>%
+  filter(lostTopInhibitor == 0) %>%
+  # remove the observations with destroyed Mid inhibitor but not Mid Base Turret
+  filter(destroyedMidInhibitor == 0) %>%
+  filter(lostMidInhibitor == 0) %>%
+  # remove the variables with all 0s
+  select(!c(destroyedTopBaseTurret, destroyedMidBaseTurret, 
+            lostTopBaseTurret, lostMidBaseTurret, lostMidInhibitor, 
+            destroyedMidInhibitor, lostTopInhibitor, destroyedTopInhibitor))
+```
+
+\pagebreak
+```{r}
+# Preview the dataframe
+as.tibble(lol.data)
+```
+
+\pagebreak
+# Second Model - Model without Incorrect Variables and Observations
+### Multivariate Regression Model of ALL Predictors
+```{r}
+lol.model.second <- lm(goldDiff~., data = lol.data)
+summary(lol.model.second)
+```
+
+
+\pagebreak
+### Check Multi-Chollinearity 
+```{r check-collinearity-first, fig.align="center", message=FALSE, warning=FALSE}
+# Check multi-chollinearity
+library(corrplot)
+# Visualize the aliasing in the model matrix, excluding the intercept.
+X <- model.matrix(~.-1, data = lol.data[,-1])
+
+# Create color map on pairwise correlations.
+contrast.vectors.correlations <- cor(X)
+corrplot(contrast.vectors.correlations, type = "full", addgrid.col = "gray",
+         tl.col = "black", tl.srt = 90, method = "color", tl.cex=0.3)
+```
+\pagebreak
+### Check Variant IF
+Predictors with VIF greater than 5 needs to be considered twice.  
+```{r fig.align="center", message=FALSE, warning=FALSE}
+# Using 'vif' function in 'car' package
+library(car)
+vif_values <- vif(lol.model.second)
+# Set the left margin of plot be 1
+par(oma=c(0,1,0,0))
+#create horizontal bar chart to display each VIF value
+barplot(vif_values, main = "VIF Values", horiz = TRUE, col = "cyan", las=1, cex.names=0.4)
+
+#add vertical line at 5
+abline(v = 5, lwd = 3, lty = 2)
+```
+
+Now we look at Variance IF:  
+1. we need to remove **expDiff** since it highly correlates with **ChampLevelDiff**  
+2. we can calculate **KDA** by $$ KDA = \frac{kills + assists} {deaths}$$ Then we **kills**, **deaths**, **assists**.  
+
+```{r}
+# remove expDiff
+drop <- c("expDiff")
+lol.data <- lol.data[,!(names(lol.data) %in% drop)]
+as.tibble(lol.data)
+```
+```{r}
+lol.model.second <- lm(goldDiff~., data = lol.data)
+summary(lol.model.second)
+```
+
+
+
+
+```{r}
+# To avoid those variables with larger ranges dominating over those with small ranges
+# We standardize assist and kills by z-score = (value - mean) / standard deviation
+par(mfrow=c(3,1))
+hist(lol.data$assists, col = "red", breaks = 14, 
+     xlim = c(0, 140), ylim = c(0, 4000),
+     xlab = "Assists", main = "Assists Distribution")
+hist(lol.data$kills, col="blue", breaks = 7, 
+     xlim = c(0, 140),  ylim = c(0, 4000),
+     xlab = "Kills", main = "Kills Distribution")
+hist(lol.data$deaths, col="green", breaks = 7, 
+     xlim = c(0, 140),  ylim = c(0, 4000),
+     xlab = "Deaths", main = "Deaths Distribution")
+```
+```{r}
+# We can find after modification, the mean and variance of kills and assists are the same, 
+# as well as their ranges
+par(mfrow=c(3,1))
+# lol.data$kills = (lol.data$kills - mean(lol.data$kills)) / sd(lol.data$kills)
+lol.data$assists = ((lol.data$assists - mean(lol.data$assists)) / sd(lol.data$assists) 
+                    * sd(lol.data$kills) + mean(lol.data$kills))
+# lol.data$deaths = (lol.data$deaths - mean(lol.data$deaths)) / sd(lol.data$deaths)
+boxplot(lol.data$assists, col="red", horizontal = T,
+        ylim = c(0, 90),
+     xlab = "Modified Assists", main = "Standardized Assists Distribution")
+boxplot(lol.data$kills, col="blue", horizontal = T, ylim = c(0, 90),
+     xlab = "Modified Kills", main = "Standardized Kills Distribution")
+boxplot(lol.data$deaths, col="green", horizontal = T, ylim = c(0, 90),
+     xlab = "Modified Deaths", main = "Standardized Deaths Distribution")
+```
+```{r}
+# Then, we can start to calculate KDA
+# lapply(lol.data, function(x){ length(which(x==0))}) # Check the number of zeros in each column
+# Set those death = 0 to death = 1, since that's how KDA is calculated
+lol.data$deaths[lol.data$deaths == 0] <- 1
+lol.data$KDA <- (lol.data$kills + lol.data$assists) / lol.data$deaths
+# Remove Kills, Assists, and Deaths
+lol.data <- lol.data %>% 
+  select(!c(kills, assists, deaths))
+# Perview the data frame
+as.tibble(lol.data)
+```
+
+
+
+
+
+
+
+
+
+
+
+\pagebreak
+# Third Model - Model without Collinearity Problems
+### Multivariate Regression Model of independent Predictors
+```{r}
+lol.model.third <- lm(goldDiff~., data=lol.data)
+summary(lol.model.third)
+```
+
+\pagebreak
+### Check Variant Inflation Factor
+Predictors with VIF greater than 5 needs to be considered twice.  
+```{r message=FALSE, warning=FALSE, fig.align="center"}
+# Using 'vif' function in 'car' package
+library(car)
+vif_values <- vif(lol.model.third)
+# Set the left margin of plot be 1
+par(oma=c(0,1,0,0))
+#create horizontal bar chart to display each VIF value
+barplot(vif_values, main = "VIF Values", 
+        horiz = TRUE, col = "cyan", las=1, cex.names=0.4, xlim = c(0, 6))
+
+#add vertical line at 5
+abline(v = 5, lwd = 3, lty = 2)
+```
+
+\pagebreak
+### Check Multi-Chollinearity 
+```{r check-collinearity-third, fig.align="center", message=FALSE, warning=FALSE}
+# Check multi-chollinearity
+library(corrplot)
+# Visualize the aliasing in the model matrix, excluding the intercept.
+X <- model.matrix(~.-1, data = lol.data[,-1])
+
+# Create color map on pairwise correlations.
+contrast.vectors.correlations <- cor(X)
+corrplot(contrast.vectors.correlations, type = "full", addgrid.col = "gray",
+         tl.col = "black", tl.srt = 90, method = "color", tl.cex=0.3)
+```
+```{r}
+contrast.vectors.correlations[c(15, 16), c(15, 16)]
+```
+
+*Unsure* Since the absolute value of covariance between killed rift herald and lost rift herald are 0.73836 > 0.6, we can delete one predictor since they're nearly dependent. According to Lecture 8_2, we can only use one "representative" variable from among the set of correlated variables. Thus, we choose **killedRiftHerald** as "representative" variable and remove lostRiftHerald from our dataset.  
+
+```{r}
+# There're other correlated predictors such as KDA and champLDiff, 
+# destroyedBotNexusTurret and destroyedBotInhibitor, 
+# lostBotNexusTurret and lostBotInhibitor
+contrast.vectors.correlations[abs(contrast.vectors.correlations) > 0.6]
+```
+**Problem**: Should we also remove one in each pair of KDA and champLDiff, destroyedBotNexusTurret and destroyedBotInhibitor, lostBotNexusTurret and lostBotInhibitor? 
+
+```{r}
+# Remove lostRiftHerald
+lol.data <- lol.data %>% 
+  select(!c(lostRiftHerald))
+# Preview the Data Set
+as.tibble(lol.data)
+```
+
+
+
+
+
+
+
+
+\pagebreak
+# Forth Model - Best Sub-Model with Lowest BIC Score
+### Identify the Best Submodel
+```{r forward-search}
+# eliminate predictors
+library(leaps)
+Best_Subset <- regsubsets(goldDiff ~., data = lol.data, 
+                          nbest = 1, nvmax=NULL, 
+                          force.in = NULL, force.out=NULL, 
+                          method = "exhaustive", 
+                          really.big=F)
+summary_best_subset <- summary(Best_Subset)
+# as.data.frame(summary_best_subset$outmat)
+```
+
+
+```{r}
+# R square will always increase if one predictor is added
+plot(summary_best_subset$rsq, xlab = "Number of predictors", ylab = "R^2",
+     type = "l", col = "blue", main = 'Best Subset Selection')
+
+plot(summary_best_subset$rss, xlab = "Number of predictors", ylab = "RSS",
+     type = "l", col = "blue", main = 'Best Subset Selection')
+```
+
+
+
+```{r}
+# Plot RSS
+plot(summary_best_subset$rss, xlab = "Number of Variables", ylab = "RSS", type = "l")
+# Plot Adjusted R^2, highlight max value
+plot(summary_best_subset$adjr2, xlab = "Number of Variables", ylab = "Adjusted RSq", type = "l")
+max = which.max(summary_best_subset$adjr2)
+points(max, summary_best_subset$adjr2[max], col = "red", cex = 2, pch = 20)
+# Plot BIC, highlight min value
+plot(summary_best_subset$bic, xlab = "Number of Variables", ylab = "BIC", type = "l")
+min = which.min(summary_best_subset$bic)
+points(min, summary_best_subset$bic[min], col = "red", cex = 2, pch = 20)
+```
+BIC shows that 34 variables are the best!!!!!
+
+\pagebreak
+### Select Model with least BIC score
+```{r}
+# We first select the best model according to BIC.
+modelwith.minimum.BIC <- which.min(summary_best_subset$bic)
+best.model <- summary_best_subset$which[modelwith.minimum.BIC,][-1]
+# Only keep the predictors are indicated by ‘TRUE’ and our response 'goldDiff'
+keep <- names(best.model[best.model==T])
+keep <- append(keep, c("goldDiff"))
+# Using 'keep' as a mask to select best predictors in data set
+lol.data <- lol.data[,(names(lol.data) %in% keep)]
+# Preview the selected data set with only best predictors
+as.tibble(lol.data)
+```
+
+\pagebreak
+### Make a Multivariate Regression Model of best Predictors
+```{r}
+lol.model.forth <- lm(goldDiff~., data=lol.data)
+# T-test or Partial F-test
+summary(lol.model.forth)
+```
+
+
+\pagebreak
+### Check Variant Inflation Factor
+Predictors with VIF greater than 5 needs to be considered twice.  
+```{r message=FALSE, warning=FALSE, fig.align="center"}
+# Using 'vif' function in 'car' package
+library(car)
+vif_values <- vif(lol.model.forth)
+# Set the left margin of plot be 1
+par(oma=c(0,1,0,0))
+#create horizontal bar chart to display each VIF value
+barplot(vif_values, main = "VIF Values", 
+        horiz = TRUE, col = "cyan", las=1, cex.names=0.4, xlim = c(0, 6))
+
+#add vertical line at 5
+abline(v = 5, lwd = 3, lty = 2)
+```
+Since no VIF is greater than 5, there're **no serious** collinearity problem with predictors.
+
+
+\pagebreak
+### Check Multi-Chollinearity 
+```{r r check-collinearity-forth, fig.align="center", message=FALSE, warning=FALSE}
+# Visualize the aliasing in the model matrix, excluding the intercept.
+X <- model.matrix(~.-1, data = lol.data[,-1])
+
+# Create color map on pairwise correlations.
+contrast.vectors.correlations <- cor(X)
+corrplot(contrast.vectors.correlations, type = "full", addgrid.col = "gray",
+         tl.col = "black", tl.srt = 90, method = "color", tl.cex=0.4)
+```
+
+From the multi collinearity color graph above, we have grids other than the diagonal do not contain deeper color, which means in general multicollinearity is not problematic
+
+***
+
++ Why we drop **expDiff** instead of **ChampLevelDiff**?  
++ A: 
++ Why we can drop predictors with high p-value?  
++ A: As mentioned by lecture 7-1
++ Why observations with **Death** == 0 can be dropped?  
++ A: In Calculating KDA, death = 0 is same with death = 1
+
++ Why **Assist** is a good predictor? It's Estimated Coefficient is negative  
++ A: it doesn't matter
++ Why the weight of **Assist** == the weight of **Kill**
++ A: some scarifies in accuracy is necessary to simplify the model. We adjust the range of it so it won't dominate with Kills.  
+  
+
+
+\pagebreak
+# Residual Analysis
+Calculate Pesky Points: High leverage Points and Outliers
+```{r}
+# number of coefficient in our model, including the intercept
+# The sum of diagonal of leverage matrix
+p <- length(lol.data)  
+n <- length(lol.data$goldDiff) # Number of observations in our model
+# a high leverage point is the point with more than twice of the average leverage score
+high_leverage <- 2*p/n
+```
+
+```{r}
+# Display four plot at a time
+# par(mfrow=c(2,2 ))
+plot(lol.model.forth)
+# Since our dataset can be considered as 'large', according to Campuswire post
+# High leverage points with standardized residual outside of (-4, 4) are considered bad
+abline(a =4, b=0, col = "red", lwd = 2)
+abline(a =-4, b=0, col = "red", lwd = 2)
+abline(v = high_leverage, col = "blue", lwd = 2)
+```
+  
+**Constant variance of the residuals**: Since we have high leverage points, we should use Scale-Location plot to check the constant of variance assumption. Since the residuals are scattered uniformly and there's no evident trend shown in the Scale-Location plot, we can say that the assumption of constant of variance is satisfied.  
+
+**Normality**: Since the sample size is large, according to Central Limit Theorem, we can still get approximately unbiased estimates of the coefficients. 
+
+**Residuals are independent**: Generally its hard to check. Usually there're two classes of dependencies:  
+1. Residuals correlate with another variable (reponse and predictors)  
+2. Residuals correlate with other (close) residuals (autocorrelation)  
+
+##### 1 Residuals correlate with another variable (reponse and predictors)  
+From the Residuals vs Fitted plot, since the dots are randomly scattered, we get the residuals are independent of y.   
+For correlation with other variables, we choose the first predictor to represent (I don't want to show too many plots)  
+```{r}
+plot(lol.data$champLevelDiff, lol.model.forth$residuals)
+```
+
+##### 2 autocorrelation  
+```{r acf-plot, fig.align="center"}
+acf(lol.model.forth$residuals, type = "correlation")
+```
+From the acf plot above, since the lags are almost 0 except for itself, we get the residuals are not autocorrelated. 
+
+
+
+\pagebreak
+### Marginal Model Plot - Structure of Model  
+##### Marginal plots allow us to check if the **structure of the model** captures the relationship between the response and a single predictor.  
+When the two functions are similar in each of the graphs, there is evidence that the model fits well.   
+When the two functions differ in at least one of the graphs, there is evidence that the model does not fit well.
+```{r marginal-model}
+mmps(lol.model.forth, ask = F)
+```
+Since for all plots (except for upper tail in KDA), two functions perfectly match with each other, there is evidence that the model fits well.  
+
+
+\pagebreak
+### Added-Variable Plot
+```{r eval=FALSE, include=FALSE}
+# Plots for potetial 'bad' predictors
+# avPlot(lol.model.forth, "assists")
+par(mfrow=c(2,2))
+avPlot(lol.model.forth, "wardsPlaced")
+avPlot(lol.model.forth, "lostWaterDrake")
+avPlot(lol.model.forth, "lostEarthDrake")
+avPlot(lol.model.forth, "killedFireDrake")
+```
+
+```{r avPlots, eval=FALSE, include=FALSE}
+# Plots for some 'significant' predictors
+par(mfrow=c(2,2))
+#avPlot(lol.model.forth, "champLevelDiff")
+#avPlot(lol.model.forth, "destroyedBotBaseTurret")
+#avPlot(lol.model.forth, "lostTopOuterTurret")
+#avPlot(lol.model.forth, "KDA")
+avPlots(lol.model.forth, ask =F)
+```
+
+

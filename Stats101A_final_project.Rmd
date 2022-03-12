@@ -1,0 +1,145 @@
+---
+title: "stats101A_final_project"
+author: "Proud Jiao"
+date: "3/6/2022"
+output: html_document
+---
+
+```{r}
+lol_data <- read.csv("lol_games.csv")
+
+mlr_model <- lm(data = lol_data, formula = goldDiff~.)
+summary(mlr_model)
+
+```
+
+```{r}
+max(lol_data$destroyedTopBaseTurret)
+max(lol_data$destroyedBotBaseTurret)
+max(lol_data$lostTopBaseTurret)
+max(lol_data$lostMidBaseTurret)
+max(lol_data$lostBotBaseTurret)
+
+library(tidyverse)
+lol_data_new <- lol_data %>% 
+  filter(destroyedBotBaseTurret < 2) %>% 
+  filter(lostBotBaseTurret < 2) %>% 
+  filter(destroyedTopInhibitor == 0) %>%
+  filter(lostTopInhibitor == 0) %>%
+  filter(destroyedMidInhibitor == 0) %>%
+  filter(lostMidInhibitor == 0) %>%
+  select(!c(destroyedTopBaseTurret, destroyedMidBaseTurret, lostTopBaseTurret, lostMidBaseTurret, lostMidInhibitor, destroyedMidInhibitor, lostTopInhibitor, destroyedTopInhibitor, gameId, gameDuration))
+lol_data_new
+
+
+mlr_model_new <- lm(data = lol_data_new, formula = goldDiff~.)
+summary(mlr_model_new)
+
+```
+
+```{r}
+# Check multi-chollinearity
+library(corrplot)
+# Visualize the aliasing in the model matrix, excluding the intercept.
+X <- model.matrix(~.-1, data = lol_data_new[,-1])
+
+# Create color map on pairwise correlations.
+contrast.vectors.correlations <- cor(X)
+corrplot(contrast.vectors.correlations, type = "full", addgrid.col = "gray",
+         tl.col = "black", tl.srt = 90, method = "color", tl.cex=0.4)
+
+library(leaps)
+forward_sel <- regsubsets(goldDiff~., data = lol_data_new, nbest = 1, nvmax = NULL, intercept = TRUE, method = "forward", really.big = FALSE)
+sumF <- summary(forward_sel)
+include_index <- sumF$which[which.max(sumF$adjr2),][-1]
+
+backward_sel <- regsubsets(goldDiff~., data = lol_data_new, nbest = 1, nvmax = NULL, intercept = TRUE, method = "backward", really.big = FALSE)
+sumB <- summary(backward_sel)
+sumB$which[which.max(sumB$adjr2),][-1]
+
+include_index <- sumB$which[which.max(sumB$adjr2),][-1]
+include_index
+names(include_index)[include_index]
+
+lol_data_new2 <- lol_data_new[names(lol_data_new) %in% c(names(include_index)[include_index], "goldDiff")]
+lol_data_new2
+
+mlr_model_3 <- lm(data=lol_data_new2, goldDiff~.)
+summary(mlr_model_3)
+```
+
+
+```{r}
+
+# removing wardplaced because 1. t-test p-value too large 2. ward placed and wards lost
+
+
+# let's plot collinaerity again
+X <- model.matrix(~.-1, data = lol_data_new2[,-1])
+contrast.vectors.correlations <- cor(X)
+contrast.vectors.correlations
+corrplot(contrast.vectors.correlations, type = "full", addgrid.col = "gray",
+         tl.col = "black", tl.srt = 90, method = "color", tl.cex=0.5)
+
+lol_data_new2
+
+# Now we look at Variance IF, we remove expDiff (highly correlated with Champ Level), we calculate KDA, remove kills, deaths, assists
+lol_data_new2$KDA<-(lol_data_new2$kills+lol_data_new2$assists)/lol_data_new2$deaths
+drop2 <- c("kills", "assists", "deaths", "expDiff")
+lol_data_new2<-lol_data_new2[!((lol_data_new2$KDA)==Inf),]
+lol_data_new2<-lol_data_new2[,!(names(lol_data_new2) %in% drop2)]
+lol_data_new2
+
+#now plot vif again, vif of every predictor is below 5
+mlr_3 <- lm(data=lol_data_new2, goldDiff~.)
+summary(mlr_3)
+
+barplot(vif(mlr_3), main = "VIF Values", horiz = TRUE, col = "cyan", las=1, 
+cex.names=0.3, xlim = c(0, 5))
+
+#add vertical line at 5
+abline(v = 5, lwd = 3, lty = 2)
+
+
+## remove predictor with high p-value
+lol_data_new2 <- lol_data_new2[names(lol_data_new2) != "wardsPlaced"]
+
+mlr_4 <- lm(data=lol_data_new2, goldDiff~.)
+summary(mlr_4)
+
+lol_data_new2 <- lol_data_new2[names(lol_data_new2) != "lostWaterDrake"]
+
+no_water_drake <- lm(data=lol_data_new2, goldDiff~.)
+summary(no_water_drake)
+
+lol_data_new2 <- lol_data_new2[names(lol_data_new2) != "lostEarthDrake"]
+
+no_water_drake <- lm(data=lol_data_new2, goldDiff~.)
+summary(no_water_drake)
+```
+```{r}
+# residual analysis -> identify bad high leverage points and outliers 
+p <- length(lol_data_new2)
+n <- length(lol_data_new2$goldDiff)
+high_leverage <- 2*p/n
+plot(no_water_drake)
+abline(a =4, b=0)
+abline(a =-4, b=0)
+abline(v = high_leverage)
+
+```
+```{r}
+bad_leverage_index <- abs(rstandard(no_water_drake)) > 4 & hatvalues(no_water_drake) > high_leverage
+bad_removed_df <- lol_data_new2[!bad_leverage_index,]
+
+bad_removed_mlr <- lm(data=bad_removed_df, goldDiff~.)
+summary(bad_removed_mlr)
+
+
+plot(bad_removed_mlr)
+abline(a =4, b=0)
+abline(a =-4, b=0)
+abline(v = high_leverage)
+
+```
+
