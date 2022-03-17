@@ -43,6 +43,13 @@ cat("Range of destroyedTopBaseTurret: ", range(lol.data$destroyedTopBaseTurret),
     "\nRange of lostMidBaseTurret: ", range(lol.data$lostMidBaseTurret))
 # Since all values in these four columns are 0, we can remove these predictors
 ```
+
+
+```{r}
+hist(lol.data$lostBotBaseTurret, col = c("gray","gray", "gray", "red"), breaks = 4, xlab = "Lost Bot Base Turret", main = "Distribution of value in lostBotBaseTurret")
+```
+
+
 ```{r data-cleanning, message=FALSE, warning=FALSE}
 # import tidyverse for Data Cleaning
 library(tidyverse)
@@ -68,6 +75,7 @@ lol.data <- lol.data %>%
             lostTopBaseTurret, lostMidBaseTurret, lostMidInhibitor, 
             destroyedMidInhibitor, lostTopInhibitor, destroyedTopInhibitor))
 ```
+
 
 \pagebreak
 ```{r}
@@ -253,6 +261,10 @@ as.tibble(lol.data)
 
 \pagebreak
 # Forth Model - Best Sub-Model with Lowest BIC Score
+
+Since we believe that only a few predictors have (true) coefficients different from zero (sparsity).   
+**Only a few predictors will be important.**
+
 ### Identify the Best Submodel
 ```{r forward-search}
 # eliminate predictors
@@ -276,8 +288,15 @@ plot(summary_best_subset$rss, xlab = "Number of predictors", ylab = "RSS",
      type = "l", col = "blue", main = 'Best Subset Selection')
 ```
 
+##### Bayes Information Criterion (BIC)
+We use BIC to avoid overfitting.  
+$$ BIC = nln(\frac{RSS}{n}) + ln(n) k$$
+where $n$ is the number of observations, $k$ is the number of predictors, and $ RSS $ stands for residual square sum.   
+- The best model has the smallest BIC value.  
+- For n larger than 8, log(n) > 2, and so this is a greater penalty for complexity than AIC.  
+- BIC favors simpler models than AIC.  
 
-
+We choose BIC since the **probability** that BIC selects the correct model approaches 1 as the sample size $n$ grows.  
 ```{r}
 # Plot RSS
 plot(summary_best_subset$rss, xlab = "Number of Variables", ylab = "RSS", type = "l")
@@ -379,7 +398,7 @@ high_leverage <- 2*p/n
 
 ```{r}
 # Display four plot at a time
-# par(mfrow=c(2,2 ))
+par(mfrow=c(2,2 ))
 plot(lol.model.forth)
 # Since our dataset can be considered as 'large', according to Campuswire post
 # High leverage points with standardized residual outside of (-4, 4) are considered bad
@@ -402,6 +421,28 @@ For correlation with other variables, we choose the first predictor to represent
 ```{r}
 plot(lol.data$champLevelDiff, lol.model.forth$residuals)
 ```
+Write a program to cehck that residuals are not correlate with another variable
+```{r}
+for (i in colnames(lol.data)) {
+  isdependent = F
+  if (i == "goldDiff"){
+    coValue = abs(cov(lol.model.forth$residuals, lol.model.forth$fitted.values))
+    i = "fitted value"
+  } else {
+    coValue = abs(cov(lol.model.forth$residuals, lol.data[[i]]))
+  }
+  if (coValue > 0.00001){
+    isdependent = T
+    print(i)
+    print(coValue)
+    print(" ")
+  }
+  if (! isdependent){
+    cat("Residuals are independent with ", i, "\n")
+  }
+}
+```
+
 
 ##### 2 autocorrelation  
 ```{r acf-plot, fig.align="center"}
@@ -444,4 +485,18 @@ par(mfrow=c(2,2))
 avPlots(lol.model.forth, ask =F)
 ```
 
+```{r}
+summary(lol.data)
+```
+
+
+
+### Possible Weakness of our model
+
+1. We assume the relationship between the predictors and response is additive. In other words, that there are no interactions between predictors.We didn't add interaction terms 
+
+
+```{r}
+anova(lol.model.forth)
+```
 
