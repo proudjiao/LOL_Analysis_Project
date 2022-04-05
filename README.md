@@ -2,10 +2,11 @@
 
 Use a data set of League of Legends matches to find the most important variables that affect the gold collection of the blue team.
 
+*** 
+
 ## Contributors
 Qianli Wu, Yun Lin, Proud Jiao
 
-*** 
 
 ### Process of Removing Predictors
 * Removing useless variables
